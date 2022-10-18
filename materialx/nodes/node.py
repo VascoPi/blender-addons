@@ -1,14 +1,122 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright 2022, AMD
 
+import os
+import shutil
+
 import MaterialX as mx
 
 import bpy
+import _cycles
 
 from .. import utils
 
 from .. import logging
 log = logging.Log("nodes.node")
+
+
+def osl_compile(input_path):
+    """compile .osl file with given filepath to temporary .oso file"""
+    import tempfile
+    output_file = tempfile.NamedTemporaryFile(mode='w', suffix=".oso", delete=False)
+    output_path = output_file.name
+    output_file.close()
+
+    ok = _cycles.osl_compile(input_path, output_path)
+
+    if ok:
+        print({'INFO'}, "OSL shader compilation succeeded")
+
+    return ok, output_path
+
+
+class MxNodeGroup_edit_group(bpy.types.Operator):
+    """Edit the group referenced by the active node (or exit the current node-group)"""
+    bl_idname = utils.with_prefix('nodes_edit_group')
+    bl_label = "Edit Group"
+
+    bl_options = {'INTERNAL'}
+
+    node_tree: bpy.props.StringProperty(default="")
+
+    @classmethod
+    def poll(cls, context):
+        return True #context.space_data.type == "NODE_EDITOR"
+
+    def execute(self, context):
+        space = context.space_data
+        path = space.path
+        log.warn(path)
+        node = path[-1].node_tree.nodes.active
+
+
+        if self.node_tree:
+            node_group = bpy.data.node_groups[self.node_tree]
+            log.warn("True", node_group)
+            path.append(node_group, node=node)
+            return {"FINISHED"}
+            # else:
+            #     path.append(bpy.data.node_groups[0], node=node)
+            #     return {"FINISHED"}
+        if len(path) > 1:
+            path.pop()
+        return {"CANCELLED"}
+
+
+class MxNodeGroup_update_osl(bpy.types.Operator):
+    """Edit the group referenced by the active node (or exit the current node-group)"""
+    bl_idname = utils.with_prefix('nodes_update_osl')
+    bl_label = "Update OSL"
+
+    bl_options = {'INTERNAL'}
+
+    oso_path: bpy.props.StringProperty(default="")
+
+    @classmethod
+    def poll(cls, context):
+        return True #context.space_data.type == "NODE_EDITOR"
+
+
+    def execute(self, context):
+        space = context.space_data
+        path = space.path
+        log.warn(path)
+        node = path[-1].node_tree.nodes.active
+
+        script_path = bpy.path.abspath(self.oso_path, library=node.id_data.library)
+        script_path_noext, script_ext = os.path.splitext(script_path)
+
+        if script_ext == ".oso":
+            # it's a .oso file, no need to compile
+            ok, oso_path = True, script_path
+        elif script_ext == ".osl":
+            # compile .osl file
+            ok, oso_path = osl_compile(script_path)
+
+            if ok:
+                # copy .oso from temporary path to .osl directory
+                dst_path = script_path_noext + ".oso"
+                try:
+                    shutil.copy2(oso_path, dst_path)
+                except:
+                    print({'ERROR'}, "Failed to write .oso file next to external .osl file at " + dst_path)
+
+        if not ok:
+            print({'ERROR'}, "OSL script compilation failed, see console for errors")
+            return {"CANCELLED"}
+
+        print(node.bytecode)
+        node.bytecode = ""
+        print(node.bytecode_hash)
+        node.bytecode_hash = ""
+        data = bpy.data.as_pointer()
+        ok = _cycles.osl_update_node(data, node.id_data.as_pointer(), node.as_pointer(), oso_path)
+
+        if not ok:
+            print({'ERROR'}, "OSL query failed to open " + oso_path)
+            return {"CANCELLED"}
+
+        return {"FINISHED"}
 
 
 class MxNodeInputSocket(bpy.types.NodeSocket):

@@ -11,7 +11,7 @@ from ..utils import title_str, code_str, with_prefix
 class MxNodeCategory(NodeCategory):
     @classmethod
     def poll(cls, context):
-        return context.space_data.tree_type == with_prefix('MxNodeTree')
+        return context.space_data.tree_type == with_prefix('MxNodeTree') or context.space_data.path[-1].node_tree.bl_idname == with_prefix('MxNodeTree')
 
 
 def get_node_categories():

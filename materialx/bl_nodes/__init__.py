@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright 2022, AMD
 
+import bpy
+from nodeitems_utils import (
+    NodeCategory,
+    NodeItem,
+)
+
 from .. import logging
 log = logging.Log("bl_nodes")
 
@@ -36,3 +42,6 @@ node_parser_classes = (
 
     vector.ShaderNodeNormalMap,
 )
+
+node_categories = [
+    NodeCategory('ShaderNodeMX_SHADER_INPUT', "MaterialX", items=[NodeItem('ShaderNodeMxShaderNodeGroup'),])]

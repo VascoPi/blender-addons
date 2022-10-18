@@ -9,6 +9,20 @@ import sys
 
 from . import node, categories, generate_node_classes, ui
 from .. import utils
+from nodeitems_builtins import (
+    ShaderNodeCategory,
+)
+
+def hide_cycles_and_eevee_poll(method):
+    @classmethod
+    def func(cls, context):
+        res = context.space_data.tree_type != utils.with_prefix('MxNodeTree')
+        if len(context.space_data.path) > 1:
+            res = context.space_data.path[-1].node_tree.bl_idname != utils.with_prefix('MxNodeTree') and method(context)
+
+        return res and method(context)
+
+    return func
 
 
 sys.path.append(str(utils.ADDON_DATA_DIR))
@@ -28,6 +42,8 @@ mx_node_classes = sorted(mx_node_classes, key=lambda cls: (cls.category.lower(),
 register_sockets, unregister_sockets = bpy.utils.register_classes_factory([
     node.MxNodeInputSocket,
     node.MxNodeOutputSocket,
+    node.MxNodeGroup_edit_group,
+    node.MxNodeGroup_update_osl,
 ])
 register_ui, unregister_ui = bpy.utils.register_classes_factory([
     ui.NODES_OP_import_file,
@@ -40,17 +56,34 @@ register_ui, unregister_ui = bpy.utils.register_classes_factory([
 
 register_nodes, unregister_nodes = bpy.utils.register_classes_factory(mx_node_classes)
 
+old_shader_node_category_poll = None
 
 def register():
     register_sockets()
     register_ui()
     register_nodes()
 
-    nodeitems_utils.register_node_categories(utils.with_prefix("MX_NODES"), categories.get_node_categories())
+    global old_shader_node_category_poll
+    old_shader_node_category_poll = ShaderNodeCategory.poll
+    ShaderNodeCategory.poll = hide_cycles_and_eevee_poll(ShaderNodeCategory.poll)
+
+    from ..bl_nodes import node_categories
+    from ..bl_nodes import input
+    nodeitems_utils.register_node_categories(utils.with_prefix("MX_NODES"), node_categories)
+    nodeitems_utils.register_node_categories(utils.with_prefix("MX_SHADER_NODES"), categories.get_node_categories())
+    bpy.utils.register_class(input.ShaderNodeMxShaderNodeGroup)
+
 
 
 def unregister():
-    nodeitems_utils.unregister_node_categories(utils.with_prefix("MX_NODES"))
+    from ..bl_nodes import node_categories
+    from ..bl_nodes import input
+    bpy.utils.unregister_class(input.ShaderNodeMxShaderNodeGroup)
+    nodeitems_utils.unregister_node_categories(utils.with_prefix("MX_SHADER_NODES"), categories.get_node_categories())
+    nodeitems_utils.unregister_node_categories(utils.with_prefix("MX_NODES"), node_categories)
+
+    if old_shader_node_category_poll and ShaderNodeCategory.poll is not old_shader_node_category_poll:
+        ShaderNodeCategory.poll = old_shader_node_category_poll
 
     unregister_nodes()
     unregister_ui()
